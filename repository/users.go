@@ -14,6 +14,7 @@ import (
 
 type UsersRepository interface {
 	FindUser(userData models.UserQuery) (*models.UserData, error)
+	UpdateManyUser(data []models.ReqAdmState) (*models.UserData, error)
 	Update(data models.UserData) (*models.UserData, error)
 	Create(data models.UserData) (*models.UserData, error)
 	CreateLog(data models.ActivityLog) error
@@ -23,6 +24,9 @@ type UsersRepository interface {
 	UpdateState(data models.State) error
 	DeleteState(userId int64) error
 	UpdateLog(data models.ActivityLog) error
+	CreateReqAdmin(data models.RequestAdmin) error
+	FindReqAdmin(query models.RequestAdminQuery) ([]models.RequestAdmin, int64, error)
+	// DeleteReqAdmin(userId int64) error
 }
 
 type UsersRepositoryMongo struct {
@@ -39,6 +43,10 @@ func (r *UsersRepositoryMongo) coll2() *mongo.Collection {
 
 func (r *UsersRepositoryMongo) coll3() *mongo.Collection {
 	return r.ConnectionDB.Collection("state")
+}
+
+func (r *UsersRepositoryMongo) coll4() *mongo.Collection {
+	return r.ConnectionDB.Collection("requestAdmin")
 }
 
 func (r *UsersRepositoryMongo) UpdateLog(data models.ActivityLog) error {
@@ -67,7 +75,8 @@ func (r *UsersRepositoryMongo) UpdateLog(data models.ActivityLog) error {
 func (r *UsersRepositoryMongo) FindLog(query models.ActivityLogQuery) ([]models.ActivityLog, int64, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	log := []models.ActivityLog{}
+	log := make([]models.ActivityLog, 0)
+
 	filter := bson.M{}
 	if query.UserID != nil {
 		filter["user_id"] = query.UserID
@@ -181,7 +190,7 @@ func (r *UsersRepositoryMongo) GetState(userId int64) (*models.State, error) {
 	}
 	err := r.coll3().FindOne(ctx, filter).Decode(&state)
 	if err != nil {
-		fmt.Println(err)
+		return nil, err
 	}
 
 	return &state, err
@@ -194,12 +203,21 @@ func (r *UsersRepositoryMongo) UpdateState(state models.State) error {
 		"user_id": state.UserID,
 		"state":   state.State,
 	}
+	update := bson.M{}
+	if state.SubState != "" {
+		update["sub_state"] = state.SubState
+	}
+
+	if state.Index != nil {
+		update["index"] = state.Index
+	}
+
+	if state.Data != nil {
+		update["data"] = state.Data
+	}
 
 	_, err := r.coll3().UpdateOne(ctx, filter, bson.M{
-		"$set": bson.M{
-			"sub_state": state.SubState,
-			"data":      state.Data,
-		}})
+		"$set": update})
 	if err != nil {
 		return err
 	}
@@ -209,7 +227,6 @@ func (r *UsersRepositoryMongo) UpdateState(state models.State) error {
 func (r *UsersRepositoryMongo) DeleteState(userId int64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-
 	if _, err := r.coll3().DeleteOne(ctx, bson.M{
 		"user_id": userId,
 	}); err != nil {
@@ -217,4 +234,66 @@ func (r *UsersRepositoryMongo) DeleteState(userId int64) error {
 	}
 
 	return nil
+}
+
+func (r *UsersRepositoryMongo) CreateReqAdmin(data models.RequestAdmin) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	data.ID = primitive.NewObjectID()
+	data.Modified = time.Now()
+	data.Created = data.Modified
+	_, err := r.coll4().InsertOne(ctx, data)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *UsersRepositoryMongo) FindReqAdmin(query models.RequestAdminQuery) ([]models.RequestAdmin, int64, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	data := make([]models.RequestAdmin, 0)
+	filter := bson.M{}
+	if query.UserID != nil {
+		filter["user_id"] = query.UserID
+	}
+	if query.UserName != nil {
+		filter["username"] = query.UserName
+	}
+	sort := int64(-1)
+	var count int64
+	curr, err := r.coll4().Find(ctx, filter, &options.FindOptions{
+		Sort: bson.M{"_created": sort},
+	})
+	if err != nil {
+		return data, count, err
+	}
+	err = curr.All(ctx, &data)
+	if err != nil {
+		return data, count, err
+	}
+	count, err = r.coll4().CountDocuments(ctx, filter)
+	return data, count, err
+}
+
+func (r *UsersRepositoryMongo) UpdateManyUser(data []models.ReqAdmState) (*models.UserData, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	var userId []int
+	for _, i := range data {
+		userId = append(userId, int(i.UserID))
+	}
+
+	filter := bson.M{"user_id": bson.M{"$in": userId}}
+	update := bson.M{
+		"$set": bson.M{
+			"status": "ADMIN", // Set the fields you want to update here
+		},
+	}
+	_, err := r.coll().UpdateMany(ctx, filter, update)
+	if err != nil {
+		return nil, err
+	}
+	return nil, nil
 }

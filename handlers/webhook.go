@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -44,26 +43,36 @@ func (h WebhookController) WebhookCallback(c *gin.Context) {
 	} else {
 		chatId = body.Message.Chat.ID
 	}
+	var userId int64
+	if body.CallBackQuery != nil {
+		userId = body.CallBackQuery.From.ID
+	} else {
+		userId = body.Message.Chat.ID
+	}
 	state, err := h.Repository.GetState(chatId)
 	if err != nil {
 		if err != mongo.ErrNoDocuments {
 			log.Panic(err)
 		}
 	}
-
 	if state != nil {
 		switch {
-		case state.State == "Insert_Profile" && state.SubState == "FirstName":
+		case state.State == "Request_Admin" && state.SubState == "Accept":
+			command.AcceptAdminRequest(*body, h.Repository, bot, *state)
+			return
+		case state.State == string(models.StateKindEnum.RequestAdmin) && state.SubState == "Confirm":
+			fmt.Println("masuk req admin")
+			command.ConfirmUpdateAdmin(*body, h.Repository, bot, *state)
+			return
+		case state.State == string(models.StateKindEnum.InsertProfile) && state.SubState == "FirstName":
 			command.SendInsertFirstname(*body, h.Repository, bot, *state)
 			return
-		case state.State == "Insert_Profile" && state.SubState == "LastName":
+		case state.State == string(models.StateKindEnum.InsertProfile) && state.SubState == "LastName":
 			command.SendInsertLastname(*body, h.Repository, bot, *state)
 			return
-		case state.State == "Insert_Profile" && state.SubState == "Confirm":
-			fmt.Println("masuk 3")
+		case state.State == string(models.StateKindEnum.InsertProfile) && state.SubState == "Confirm":
 			if body.CallBackQuery.Data == "/confirm" {
 				command.SendConfirmData(h.Repository, bot, *body, *state)
-				command.SendMainMenu(bot, chatId)
 			} else if body.CallBackQuery.Data == "/cancel" {
 				command.SendCancelData(h.Repository, bot, *body, *state)
 			} else {
@@ -74,16 +83,16 @@ func (h WebhookController) WebhookCallback(c *gin.Context) {
 				command.ReplyConfirmData(bot, chatId, data.FirstName, data.LasttName)
 			}
 			return
-		case state.State == "Update_Profile" && state.SubState == "FirstName":
+		case state.State == string(models.StateKindEnum.UpdateProfile) && state.SubState == "FirstName":
 			command.SendInsertFirstname(*body, h.Repository, bot, *state)
 			return
-		case state.State == "Update_Profile" && state.SubState == "LastName":
+		case state.State == string(models.StateKindEnum.UpdateProfile) && state.SubState == "LastName":
 			command.SendInsertLastname(*body, h.Repository, bot, *state)
 			return
-		case state.State == "Update_Profile" && state.SubState == "Confirm":
+		case state.State == string(models.StateKindEnum.UpdateProfile) && state.SubState == "Confirm":
 			if body.CallBackQuery.Data == "/confirm" {
 				command.UpdateProfile(h.Repository, bot, *body, *state)
-				command.SendMainMenu(bot, chatId)
+				command.MainMenu(bot, chatId, userId, h.Repository)
 			} else if body.CallBackQuery.Data == "/cancel" {
 				command.SendCancelData(h.Repository, bot, *body, *state)
 			} else {
@@ -101,13 +110,16 @@ func (h WebhookController) WebhookCallback(c *gin.Context) {
 
 	if body.CallBackQuery != nil {
 		switch body.CallBackQuery.Data {
+		case "/accept":
+			command.AcceptReqAdm(*body, h.Repository, bot)
+			return
 		case "/insert":
 			if err := command.SendInsert(*body, h.Repository, bot, models.StateKindEnum.InsertProfile); err != nil {
 				log.Panic(err)
 			}
 			return
 		case "/back":
-			command.SendMainMenu(bot, chatId)
+			command.MainMenu(bot, chatId, userId, h.Repository)
 			return
 		case "/update":
 			if err := command.SendInsert(*body, h.Repository, bot, models.StateKindEnum.UpdateProfile); err != nil {
@@ -116,7 +128,8 @@ func (h WebhookController) WebhookCallback(c *gin.Context) {
 			return
 		default:
 			bot.Send(tgbotapi.NewMessage(chatId, "I don't understand that command."))
-			command.SendMainMenu(bot, chatId)
+			command.MainMenu(bot, chatId, userId, h.Repository)
+			return
 		}
 	}
 
@@ -124,7 +137,7 @@ func (h WebhookController) WebhookCallback(c *gin.Context) {
 		text := strings.ToLower(body.Message.Text)
 		switch {
 		case text == "/start" || text == "/back" || text == "/no":
-			command.SendMainMenu(bot, chatId)
+			command.MainMenu(bot, chatId, userId, h.Repository)
 		case text == "/profile":
 			command.Profile(h.Repository, bot, *body)
 		case text == "/login":
@@ -139,6 +152,10 @@ func (h WebhookController) WebhookCallback(c *gin.Context) {
 				return
 			}
 			command.SignOut(h.Repository, bot, *body)
+		case text == "/req_admin":
+			command.RequestAdm(*body, h.Repository, bot)
+			command.MainMenu(bot, chatId, userId, h.Repository)
+
 		case text == "/coba":
 			command.CheckFile("data.csv")
 			massage := tgbotapi.NewMessage(chatId, "messageText")
@@ -146,10 +163,14 @@ func (h WebhookController) WebhookCallback(c *gin.Context) {
 			bot.Send(massage)
 		case text == "/absensi":
 			command.Attendance(*body, bot, h.Repository)
-			command.SendMainMenu(bot, chatId)
+			command.MainMenu(bot, chatId, userId, h.Repository)
+
+		case text == "/confirm_admin":
+			command.ConfirmAdm(*body, h.Repository, bot)
 		default:
 			bot.Send(tgbotapi.NewMessage(chatId, "I don't understand that command."))
-			command.SendMainMenu(bot, chatId)
+			command.MainMenu(bot, chatId, userId, h.Repository)
+
 		}
 	}
 	c.String(http.StatusOK, "Working!")
@@ -169,63 +190,4 @@ func createPaginationKeyboard(currentPage, totalPages int) tgbotapi.InlineKeyboa
 	}
 
 	return tgbotapi.NewInlineKeyboardMarkup(row)
-}
-
-func sendRequestInsertData(bot *tgbotapi.BotAPI, chatID int64, data []string) {
-	var row []tgbotapi.KeyboardButton
-	for _, i := range data {
-		row = append(row, tgbotapi.NewKeyboardButton(i))
-	}
-	var numericKeyboard = tgbotapi.NewReplyKeyboard(
-		tgbotapi.NewKeyboardButtonRow(
-			row...,
-		),
-	)
-	numericKeyboard.OneTimeKeyboard = true
-	numericKeyboard.Selective = true
-	msg := tgbotapi.NewMessage(chatID, "Select an option:")
-	msg.ReplyMarkup = numericKeyboard
-
-	bot.Send(msg)
-}
-
-func sendValidInsertData(bot *tgbotapi.BotAPI, chatID int64) {
-	var numericKeyboard = tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("/yes", "/yes"),
-			tgbotapi.NewInlineKeyboardButtonData("/no", "/start"),
-		),
-	)
-
-	msg := tgbotapi.NewMessage(chatID, "Select an option:")
-	msg.ReplyMarkup = numericKeyboard
-
-	bot.Send(msg)
-}
-
-func sendCSVData(activity []models.ActivityLog) {
-	// Create a CSV file
-	fileName := "data.csv"
-	file, err := os.Create(fileName)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer file.Close()
-
-	csvWriter := csv.NewWriter(file)
-	defer csvWriter.Flush()
-
-	// Write the CSV header
-	headers := []string{"Name", "Sign_in_hour", "Sign_out_hour"}
-	if err := csvWriter.Write(headers); err != nil {
-		log.Fatal(err)
-	}
-
-	for _, i := range activity {
-		row := []string{i.UserName, i.SignIn.Format("Monday, January 2, 2006 15:04:05 MST"), i.SignOut.Format("Monday, January 2, 2006 15:04:05 MST")}
-		if err := csvWriter.Write(row); err != nil {
-			log.Fatal(err)
-		}
-	}
-
 }

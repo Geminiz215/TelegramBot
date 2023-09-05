@@ -13,21 +13,22 @@ import (
 
 func SignOut(p repository.UsersRepository, bot *tgbotapi.BotAPI, body models.WebhookReqBody) {
 	chatId := body.Message.Chat.ID
-	if _, err := p.FindUser(models.UserQuery{UserID: &body.Message.From.ID}); err != nil {
+	userId := body.Message.From.ID
+	if _, err := p.FindUser(models.UserQuery{UserID: &userId}); err != nil {
 		if err == mongo.ErrNoDocuments {
 			requestInsertData(bot, chatId)
 			return
 		}
 	}
 	activity, _, err := p.FindLog(models.ActivityLogQuery{
-		UserID: &body.Message.From.ID,
+		UserID: &userId,
 	})
 	if err != nil {
 		log.Panic(err)
 	}
-	if activity[0].SignOut != nil {
+	if len(activity) == 0 || activity[0].SignOut != nil {
 		bot.Send(tgbotapi.NewMessage(chatId, "You are not logged in."))
-		SendMainMenu(bot, chatId)
+		SendMainMenu(bot, chatId, userId, true, nil)
 		return
 	}
 	// Load the location
@@ -43,11 +44,21 @@ func SignOut(p repository.UsersRepository, bot *tgbotapi.BotAPI, body models.Web
 		DocumentBase: models.DocumentBase{
 			ID: activity[0].ID,
 		},
-		UserID:  body.Message.From.ID,
+		UserID:  userId,
 		SignOut: &currentTime,
 	})
-	bot.Send(tgbotapi.NewMessage(chatId, "Sucessed"))
-	SendMainMenu(bot, chatId)
+	formattedTimeIn := activity[0].SignIn.Format("January 02, 2006 15:04:05")
+	formattedTimeOut := currentTime.Format("January 02, 2006 15:04:05")
+	editMessage(bot, chatId, int(activity[0].MessageID), fmt.Sprintf("status : Sucessed.\nSign_in Time : %s\n Sign_out Time : %s", formattedTimeIn, formattedTimeOut))
+	SendMainMenu(bot, chatId, userId, true, nil)
+}
+
+func editMessage(bot *tgbotapi.BotAPI, chatID int64, messageID int, newMessageText string) error {
+	editMessage := tgbotapi.NewEditMessageText(chatID, messageID, newMessageText)
+	editMessage.ParseMode = "Markdown"
+
+	_, err := bot.Send(editMessage)
+	return err
 }
 
 func IsWeekend() bool {

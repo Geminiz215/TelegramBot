@@ -2,23 +2,55 @@ package command
 
 import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/telegram-bot/models"
+	"github.com/telegram-bot/repository"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func SendMainMenu(bot *tgbotapi.BotAPI, chatID int64) {
+func MainMenu(bot *tgbotapi.BotAPI, chatID int64, userID int64, p repository.UsersRepository) error {
+	_, err := p.FindUser(models.UserQuery{
+		UserID: &userID,
+	})
+	status := true
+	if err != nil && err == mongo.ErrNoDocuments {
+		SendMainMenu(bot, chatID, userID, false, &status)
+	}
+	activity, _, _ := p.FindLog(models.ActivityLogQuery{
+		UserID: &userID,
+	})
+
+	if len(activity) != 0 && activity[0].SignIn != nil && activity[0].SignOut == nil {
+		SendMainMenu(bot, chatID, userID, false, nil)
+	}
+	SendMainMenu(bot, chatID, userID, true, nil)
+	return nil
+
+}
+
+func SendMainMenu(bot *tgbotapi.BotAPI, chatID int64, userID int64, status bool, profile *bool) {
+	//true login
+	//false logout
+	msg := tgbotapi.NewMessage(chatID, "Select an menu option:")
+	if profile != nil && *profile {
+		msg = tgbotapi.NewMessage(chatID, "please insert profile: /profile")
+	}
+
 	menu := tgbotapi.NewReplyKeyboard(
 		tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton("/profile"),
 			tgbotapi.NewKeyboardButton("/login"),
 		),
-		tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton("/logout"),
-			tgbotapi.NewKeyboardButton("/absensi"),
-		),
 	)
+
+	if !status {
+		menu = tgbotapi.NewReplyKeyboard(
+			tgbotapi.NewKeyboardButtonRow(
+				tgbotapi.NewKeyboardButton("/logout"),
+			),
+		)
+	}
 	menu.OneTimeKeyboard = true
 	menu.Selective = true
 
-	msg := tgbotapi.NewMessage(chatID, "Select an option:")
 	msg.ReplyMarkup = menu
 
 	bot.Send(msg)

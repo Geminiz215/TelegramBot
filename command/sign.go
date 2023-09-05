@@ -13,22 +13,23 @@ import (
 
 func SignIn(p repository.UsersRepository, bot *tgbotapi.BotAPI, body models.WebhookReqBody) {
 	chatId := body.Message.Chat.ID
-	if _, err := p.FindUser(models.UserQuery{UserID: &body.Message.From.ID}); err != nil {
+	userId := body.Message.From.ID
+	if _, err := p.FindUser(models.UserQuery{UserID: &userId}); err != nil {
 		if err == mongo.ErrNoDocuments {
 			requestInsertData(bot, chatId)
 			return
 		}
 	}
 	activity, _, err := p.FindLog(models.ActivityLogQuery{
-		UserID: &body.Message.From.ID,
+		UserID: &userId,
 	})
 	if err != nil {
 		log.Panic(err)
 	}
 
-	if activity[0].SignOut == nil && activity[0].SignIn != nil {
+	if len(activity) != 0 && (activity[0].SignOut == nil && activity[0].SignIn != nil) {
 		bot.Send(tgbotapi.NewMessage(chatId, "You are still logged in."))
-		SendMainMenu(bot, chatId)
+		SendMainMenu(bot, chatId, userId, false, nil)
 		return
 	}
 
@@ -40,13 +41,15 @@ func SignIn(p repository.UsersRepository, bot *tgbotapi.BotAPI, body models.Webh
 	}
 	// Get the current time in the specified location
 	currentTime := time.Now().In(loc)
+	formattedTime := currentTime.Format("January 02, 2006 15:04:05")
+	k, _ := bot.Send(tgbotapi.NewMessage(chatId, fmt.Sprintf("status : Sucessed.\nSign_in Time : %s\nSign_out Time :", formattedTime)))
 	p.CreateLog(models.ActivityLog{
-		UserID:   body.Message.From.ID,
-		UserName: body.Message.From.UserName,
-		SignIn:   &currentTime,
+		UserID:    userId,
+		UserName:  body.Message.From.UserName,
+		SignIn:    &currentTime,
+		MessageID: int64(k.MessageID),
 	})
-	bot.Send(tgbotapi.NewMessage(chatId, "Sucessed. "))
-	SendMainMenu(bot, chatId)
+	SendMainMenu(bot, chatId, userId, false, nil)
 }
 
 func requestInsertData(bot *tgbotapi.BotAPI, chatID int64) {

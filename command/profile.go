@@ -19,7 +19,11 @@ func Profile(p repository.UsersRepository, bot *tgbotapi.BotAPI, body models.Web
 			return
 		}
 	}
-	bot.Send(tgbotapi.NewMessage(chatId, fmt.Sprintf("FirstName : %s \nLastName : %s\nUserName : %s", user.FirstName, user.LastName, user.UserName)))
+	msg := tgbotapi.NewMessage(chatId, fmt.Sprintf("FirstName : %s \nLastName : %s\nUserName : %s\n", user.FirstName, user.LastName, user.UserName))
+	if user.Status != nil {
+		msg = tgbotapi.NewMessage(chatId, fmt.Sprintf("FirstName : %s \nLastName : %s\nUserName : %s\nStatus : %s", user.FirstName, user.LastName, user.UserName, *user.Status))
+	}
+	bot.Send(msg)
 	replyUpdateData(bot, chatId)
 }
 

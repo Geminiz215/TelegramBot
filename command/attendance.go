@@ -34,7 +34,7 @@ func Attendance(body models.WebhookReqBody, bot *tgbotapi.BotAPI, p repository.U
 	}
 
 	if count < 1 {
-		msg := tgbotapi.NewMessage(chatId, "signIn data not found")
+		msg := tgbotapi.NewMessage(chatId, "sign_in data not found")
 		if _, err = bot.Send(msg); err != nil {
 			return err
 		}
