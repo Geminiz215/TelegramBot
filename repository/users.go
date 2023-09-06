@@ -26,6 +26,7 @@ type UsersRepository interface {
 	UpdateLog(data models.ActivityLog) error
 	CreateReqAdmin(data models.RequestAdmin) error
 	FindReqAdmin(query models.RequestAdminQuery) ([]models.RequestAdmin, int64, error)
+	DeleteManyReqAdmin(data []models.ReqAdmState) error
 	// DeleteReqAdmin(userId int64) error
 }
 
@@ -296,4 +297,22 @@ func (r *UsersRepositoryMongo) UpdateManyUser(data []models.ReqAdmState) (*model
 		return nil, err
 	}
 	return nil, nil
+}
+
+func (r *UsersRepositoryMongo) DeleteManyReqAdmin(data []models.ReqAdmState) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	var userId []int
+	for _, i := range data {
+		userId = append(userId, int(i.UserID))
+	}
+
+	filter := bson.M{"user_id": bson.M{"$in": userId}}
+	_, err := r.coll4().DeleteMany(ctx, filter)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

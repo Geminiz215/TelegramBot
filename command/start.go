@@ -1,6 +1,8 @@
 package command
 
 import (
+	"log"
+
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/telegram-bot/models"
 	"github.com/telegram-bot/repository"
@@ -55,4 +57,12 @@ func SendMainMenu(bot *tgbotapi.BotAPI, chatID int64, userID int64, status bool,
 
 	bot.Send(msg)
 
+}
+
+func DeleteMarkReply(bot *tgbotapi.BotAPI, body models.WebhookReqBody) {
+	editConfig := tgbotapi.NewEditMessageText(body.CallBackQuery.Message.Chat.ID, int(body.CallBackQuery.Message.MessageId), body.CallBackQuery.Message.Text)
+	_, err := bot.Send(editConfig)
+	if err != nil {
+		log.Panicln(err)
+	}
 }

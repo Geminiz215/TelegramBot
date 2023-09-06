@@ -190,11 +190,18 @@ func ConfirmUpdateAdmin(body models.WebhookReqBody, p repository.UsersRepository
 		bson.Unmarshal(d, &item)
 		data = append(data, item)
 	}
+
 	_, err := p.UpdateManyUser(data)
 	if err != nil {
 		return nil
 	}
+
 	err = p.DeleteState(state.UserID)
+	if err != nil {
+		return nil
+	}
+
+	err = p.DeleteManyReqAdmin(data)
 	if err != nil {
 		return nil
 	}

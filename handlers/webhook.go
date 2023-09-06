@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -22,10 +21,6 @@ import (
 
 type WebhookController struct {
 	Repository repository.UsersRepository
-}
-
-func getUrl() string {
-	return fmt.Sprintf("https://api.telegram.org/bot%s", os.Getenv("TOKEN"))
 }
 
 func (h WebhookController) WebhookCallback(c *gin.Context) {
@@ -59,16 +54,19 @@ func (h WebhookController) WebhookCallback(c *gin.Context) {
 		switch {
 		case state.State == "Request_Admin" && state.SubState == "Accept":
 			command.AcceptAdminRequest(*body, h.Repository, bot, *state)
+			command.DeleteMarkReply(bot, *body)
 			return
 		case state.State == string(models.StateKindEnum.RequestAdmin) && state.SubState == "Confirm":
-			fmt.Println("masuk req admin")
 			command.ConfirmUpdateAdmin(*body, h.Repository, bot, *state)
+			command.DeleteMarkReply(bot, *body)
 			return
 		case state.State == string(models.StateKindEnum.InsertProfile) && state.SubState == "FirstName":
 			command.SendInsertFirstname(*body, h.Repository, bot, *state)
+			command.DeleteMarkReply(bot, *body)
 			return
 		case state.State == string(models.StateKindEnum.InsertProfile) && state.SubState == "LastName":
 			command.SendInsertLastname(*body, h.Repository, bot, *state)
+			command.DeleteMarkReply(bot, *body)
 			return
 		case state.State == string(models.StateKindEnum.InsertProfile) && state.SubState == "Confirm":
 			if body.CallBackQuery.Data == "/confirm" {
@@ -82,12 +80,15 @@ func (h WebhookController) WebhookCallback(c *gin.Context) {
 				bot.Send(tgbotapi.NewMessage(chatId, "I don't understand that command."))
 				command.ReplyConfirmData(bot, chatId, data.FirstName, data.LasttName)
 			}
+			command.DeleteMarkReply(bot, *body)
 			return
 		case state.State == string(models.StateKindEnum.UpdateProfile) && state.SubState == "FirstName":
 			command.SendInsertFirstname(*body, h.Repository, bot, *state)
+			command.DeleteMarkReply(bot, *body)
 			return
 		case state.State == string(models.StateKindEnum.UpdateProfile) && state.SubState == "LastName":
 			command.SendInsertLastname(*body, h.Repository, bot, *state)
+			command.DeleteMarkReply(bot, *body)
 			return
 		case state.State == string(models.StateKindEnum.UpdateProfile) && state.SubState == "Confirm":
 			if body.CallBackQuery.Data == "/confirm" {
@@ -102,8 +103,10 @@ func (h WebhookController) WebhookCallback(c *gin.Context) {
 				bot.Send(tgbotapi.NewMessage(chatId, "I don't understand that command."))
 				command.ReplyConfirmData(bot, chatId, data.FirstName, data.LasttName)
 			}
+			command.DeleteMarkReply(bot, *body)
 			return
 		default:
+			command.DeleteMarkReply(bot, *body)
 			fmt.Println("Test", state.State == string(models.StateKindEnum.InsertProfile) || state.State == string(models.StateKindEnum.UpdateProfile))
 		}
 	}
@@ -112,22 +115,27 @@ func (h WebhookController) WebhookCallback(c *gin.Context) {
 		switch body.CallBackQuery.Data {
 		case "/accept":
 			command.AcceptReqAdm(*body, h.Repository, bot)
+			command.DeleteMarkReply(bot, *body)
 			return
 		case "/insert":
 			if err := command.SendInsert(*body, h.Repository, bot, models.StateKindEnum.InsertProfile); err != nil {
 				log.Panic(err)
 			}
+			command.DeleteMarkReply(bot, *body)
 			return
 		case "/back":
 			command.MainMenu(bot, chatId, userId, h.Repository)
+			command.DeleteMarkReply(bot, *body)
 			return
 		case "/update":
 			if err := command.SendInsert(*body, h.Repository, bot, models.StateKindEnum.UpdateProfile); err != nil {
 				log.Panic(err)
 			}
+			command.DeleteMarkReply(bot, *body)
 			return
 		default:
 			bot.Send(tgbotapi.NewMessage(chatId, "I don't understand that command."))
+			command.DeleteMarkReply(bot, *body)
 			command.MainMenu(bot, chatId, userId, h.Repository)
 			return
 		}
@@ -174,7 +182,6 @@ func (h WebhookController) WebhookCallback(c *gin.Context) {
 		}
 	}
 	c.String(http.StatusOK, "Working!")
-	return
 }
 
 func createPaginationKeyboard(currentPage, totalPages int) tgbotapi.InlineKeyboardMarkup {
